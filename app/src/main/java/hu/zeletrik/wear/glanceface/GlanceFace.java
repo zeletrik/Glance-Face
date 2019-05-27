@@ -1,5 +1,6 @@
 package hu.zeletrik.wear.glanceface;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.ContentUris;
 import android.content.Context;
@@ -57,6 +58,10 @@ public class GlanceFace extends CanvasWatchFaceService {
 
     @Override
     public Engine onCreateEngine() {
+        Intent myIntent = new Intent(getBaseContext(), PermissionRequestActivity.class);
+        myIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        myIntent.putExtra("KEY_PERMISSIONS", Manifest.permission.READ_CALENDAR);
+        startActivity(myIntent);
         return new Engine();
     }
 
@@ -105,7 +110,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             super.onCreate(holder);
 
             mTypeface = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Thin.ttf");
-
 
             time = currentTimeMillis();
 
