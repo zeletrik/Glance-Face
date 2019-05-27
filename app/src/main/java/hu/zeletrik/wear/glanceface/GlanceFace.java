@@ -4,6 +4,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
@@ -45,11 +46,16 @@ public class GlanceFace extends CanvasWatchFaceService {
         private SimpleDateFormat timeFormat;
         private TextPaint mTimePaint;
         private TextPaint mDatePaint;
+        private Typeface mTypeface;
         private int backgroundColor = Color.BLACK;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
+
+            mTypeface = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Thin.ttf");
+
+
             time = System.currentTimeMillis();
 
             setWatchFaceStyle(new WatchFaceStyle.Builder(GlanceFace.this)
@@ -57,19 +63,22 @@ public class GlanceFace extends CanvasWatchFaceService {
                     .build());
 
             // We setup the time and date formatter
-            dateFormat = new SimpleDateFormat("EE, MM dd", Locale.getDefault());
+            dateFormat = new SimpleDateFormat("EE, MMM dd", Locale.getDefault());
             timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
 
             mTimePaint = new TextPaint();
             mTimePaint.setColor(Color.WHITE);
             mTimePaint.setAntiAlias(true);
-            mTimePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 44, getResources().getDisplayMetrics()));
+            mTimePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 50, getResources().getDisplayMetrics()));
+            mTimePaint.setTypeface(mTypeface);
+
 
             // The date paint
             mDatePaint = new TextPaint();
             mDatePaint.setColor(Color.WHITE);
             mDatePaint.setAntiAlias(true);
-            mDatePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18, getResources().getDisplayMetrics()));
+            mDatePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20, getResources().getDisplayMetrics()));
+            mDatePaint.setTypeface(mTypeface);
 
         }
 
