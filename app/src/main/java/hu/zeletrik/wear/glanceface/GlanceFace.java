@@ -51,10 +51,12 @@ import static java.lang.System.currentTimeMillis;
  * https://codelabs.developers.google.com/codelabs/watchface/index.html#0
  */
 public class GlanceFace extends CanvasWatchFaceService {
+    public static final int ONE_MINUTE_CORRECTION = 60000;
+    public static final String TAG = "GlanceFace";
     // stop showing current meeting after this amount of time since it started.
     static final int EVENT_START_CUTOFF = 60000 * 20;
+    static final int EVENT_START_TRESHOLD = 60000 * 30;
     static final int MSG_LOAD_MEETINGS = 0;
-
 
     @Override
     public Engine onCreateEngine() {
@@ -70,11 +72,16 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         private long time;
         private SimpleDateFormat dateFormat;
+        private SimpleDateFormat eventTimeFormat;
         private SimpleDateFormat timeFormat;
         private TextPaint mTimePaint;
+        private TextPaint mEventTimeInPaint;
+        private TextPaint mEventTitlePaint;
         private TextPaint mDatePaint;
-        private Typeface mTypeface;
+        private Typeface mTypefaceThin;
+        private Typeface mTypefaceRegular;
         private int backgroundColor = Color.BLACK;
+        private Optional<CalendarEvent> calendarEvent;
         private AsyncTask<Void, Void, Boolean> mLoadMeetingsTask;
         /**
          * Handler to load the meetings once a minute in interactive mode.
@@ -109,7 +116,8 @@ public class GlanceFace extends CanvasWatchFaceService {
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
 
-            mTypeface = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Thin.ttf");
+            mTypefaceThin = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Thin.ttf");
+            mTypefaceRegular = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Regular.ttf");
 
             time = currentTimeMillis();
 
@@ -119,18 +127,31 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             dateFormat = new SimpleDateFormat("EE, MMM dd", Locale.getDefault());
             timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            eventTimeFormat = new SimpleDateFormat("mm", Locale.getDefault());
 
             mTimePaint = new TextPaint();
             mTimePaint.setColor(Color.WHITE);
             mTimePaint.setAntiAlias(true);
-            mTimePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 50, getResources().getDisplayMetrics()));
-            mTimePaint.setTypeface(mTypeface);
+            mTimePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 52, getResources().getDisplayMetrics()));
+            mTimePaint.setTypeface(mTypefaceRegular);
 
             mDatePaint = new TextPaint();
             mDatePaint.setColor(Color.WHITE);
             mDatePaint.setAntiAlias(true);
-            mDatePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20, getResources().getDisplayMetrics()));
-            mDatePaint.setTypeface(mTypeface);
+            mDatePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18, getResources().getDisplayMetrics()));
+            mDatePaint.setTypeface(mTypefaceThin);
+
+            mEventTimeInPaint = new TextPaint();
+            mEventTimeInPaint.setColor(Color.WHITE);
+            mEventTimeInPaint.setAntiAlias(true);
+            mEventTimeInPaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16, getResources().getDisplayMetrics()));
+            mEventTimeInPaint.setTypeface(mTypefaceThin);
+
+            mEventTitlePaint = new TextPaint();
+            mEventTitlePaint.setColor(Color.WHITE);
+            mEventTitlePaint.setAntiAlias(true);
+            mEventTitlePaint.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 18, getResources().getDisplayMetrics()));
+            mEventTitlePaint.setTypeface(mTypefaceRegular);
 
             mLoadMeetingsHandler.sendEmptyMessage(MSG_LOAD_MEETINGS);
 
@@ -147,6 +168,7 @@ public class GlanceFace extends CanvasWatchFaceService {
         public void onTimeTick() {
             super.onTimeTick();
             time = currentTimeMillis();
+            calendarEvent = getNextEventInThreshold();
             invalidate();
         }
 
@@ -161,8 +183,8 @@ public class GlanceFace extends CanvasWatchFaceService {
                     break;
                 case TAP_TYPE_TAP:
                     // The user has completed the tap gesture.
-                    List<CalendarEvent> filtered = getFilteredEvents(true);
-                    String msg = filtered.stream().map(CalendarEvent::getTitle).findFirst().orElse("");
+                    List<CalendarEvent> filtered = getFilteredEvents();
+                    String msg = filtered.stream().map(CalendarEvent::getTitle).findFirst().orElse("PLACEHOLDER");
                     Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_SHORT)
                             .show();
                     break;
@@ -172,10 +194,14 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
-            drawWatchFace(canvas, bounds);
+            if (calendarEvent.isPresent()) {
+                drawEventWatchFace(canvas, bounds);
+            } else {
+                drawTimeWatchFace(canvas, bounds);
+            }
         }
 
-        private void drawWatchFace(Canvas canvas, Rect bounds) {
+        private void drawTimeWatchFace(Canvas canvas, Rect bounds) {
             super.onDraw(canvas, bounds);
 
             Rect timeBounds = new Rect();
@@ -202,9 +228,53 @@ public class GlanceFace extends CanvasWatchFaceService {
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
         }
 
+        private void drawEventWatchFace(Canvas canvas, Rect bounds) {
+            super.onDraw(canvas, bounds);
+            Date now = new Date();
+            CalendarEvent event = calendarEvent.get();
+            Date eventInTimeBase = new Date((event.getStartDate().getTime()) - now.getTime() + ONE_MINUTE_CORRECTION);
+
+            Rect eventInTimeBounds = new Rect();
+            String eventInTime = "in " + eventTimeFormat.format(eventInTimeBase) + " min";
+            if (event.getStartDate().before(now)) {
+                eventInTime = "Now";
+            }
+            int eventInTimeX;
+            int eventInTimeY;
+
+            Rect eventTextBounds = new Rect();
+            String eventText = event.getTitle();
+            int eventTitleX;
+            int eventTitleY;
+
+            String timeText = timeFormat.format(time);
+            String dateText = timeText + " | " + dateFormat.format(time);
+            Rect dateBounds = new Rect();
+            int dateX;
+            int dateY;
+
+            mEventTitlePaint.getTextBounds(eventText, 0, eventText.length(), eventTextBounds);
+            eventTitleX = Math.abs(bounds.centerX() - eventTextBounds.centerX());
+            eventTitleY = Math.round((Math.abs(bounds.centerY())) - (bounds.height() * 0.11f));
+
+            mEventTimeInPaint.getTextBounds(eventInTime, 0, eventInTime.length(), eventInTimeBounds);
+            eventInTimeX = Math.abs(bounds.centerX() - eventInTimeBounds.centerX());
+            eventInTimeY = Math.round((bounds.centerY()) - (bounds.height() * 0.01f));
+
+            mDatePaint.getTextBounds(dateText, 0, dateText.length(), dateBounds);
+            dateX = Math.abs(bounds.centerX() - dateBounds.centerX());
+            dateY = Math.round((bounds.centerY() + dateBounds.height()) + (bounds.height() * 0.01f));
+
+            canvas.drawColor(backgroundColor);
+
+            canvas.drawText(eventText, eventTitleX, eventTitleY, mEventTitlePaint);
+            canvas.drawText(eventInTime, eventInTimeX, eventInTimeY, mEventTimeInPaint);
+            canvas.drawText(dateText, dateX, dateY, mDatePaint);
+        }
+
         @Override
         public void onVisibilityChanged(boolean visible) {
-            Log.d("", "Visibility changed");
+            Log.d(TAG, "Visibility changed");
             super.onVisibilityChanged(visible);
 
             if (visible) {
@@ -224,29 +294,34 @@ public class GlanceFace extends CanvasWatchFaceService {
             }
         }
 
-
-        private List<CalendarEvent> getFilteredEvents(int numEvents, Boolean startCutoff) {
+        private List<CalendarEvent> getFilteredEvents() {
             Date now = new Date();
             List<CalendarEvent> filtered = new ArrayList<>();
-            int index = 0;
             for (CalendarEvent event : events) {
-                if (startCutoff) {
-                    Date cutoff = new Date(now.getTime() - (EVENT_START_CUTOFF));
-                    if (event.getStartDate().compareTo(cutoff) < 0)
-                        continue;
+                Date cutoff = new Date(now.getTime() - (EVENT_START_CUTOFF));
+                if (event.getStartDate().compareTo(cutoff) < 0) {
+                    continue;
                 }
-                if (event.getEndDate().compareTo(now) < 0) continue;
-                filtered.add(event);
 
-                index++;
-                if (index >= numEvents)
-                    break;
+                if (event.getEndDate().compareTo(now) < 0) {
+                    continue;
+                }
+                filtered.add(event);
             }
             return filtered;
         }
 
-        private List<CalendarEvent> getFilteredEvents(Boolean startCutoff) {
-            return getFilteredEvents(events.size(), startCutoff);
+        private Optional<CalendarEvent> getNextEventInThreshold() {
+            Date now = new Date();
+            CalendarEvent nextEvent = null;
+            List<CalendarEvent> filteredEvents = getFilteredEvents();
+            if (filteredEvents.size() > 0) {
+                Date cutoff = new Date(now.getTime() + (EVENT_START_TRESHOLD));
+                if (filteredEvents.get(0).getStartDate().compareTo(cutoff) < 0) {
+                    nextEvent = filteredEvents.get(0);
+                }
+            }
+            return Optional.ofNullable(nextEvent);
         }
 
         private void cancelLoadMeetingTask() {
@@ -257,7 +332,7 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         private void onMeetingsLoaded(Boolean changed) {
             if (changed) {
-                Log.d("", "Meetings loaded and changed");
+                Log.d(TAG, "Meetings loaded and changed");
                 invalidate();
             }
         }
