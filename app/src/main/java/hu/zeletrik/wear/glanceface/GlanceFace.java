@@ -20,6 +20,8 @@ import android.provider.CalendarContract;
 import android.support.wearable.provider.WearableCalendarContract;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.text.Layout;
+import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.format.DateUtils;
 import android.util.Log;
@@ -53,10 +55,10 @@ import static java.lang.System.currentTimeMillis;
 public class GlanceFace extends CanvasWatchFaceService {
     public static final int ONE_MINUTE_CORRECTION = 60000;
     public static final String TAG = "GlanceFace";
-    // stop showing current meeting after this amount of time since it started.
-    static final int EVENT_START_CUTOFF = 60000 * 20;
-    static final int EVENT_START_TRESHOLD = 60000 * 30;
+    static final int EVENT_START_CUTOFF = 60000 * 5;
+    static final int EVENT_START_THRESHOLD = 60000 * 20;
     static final int MSG_LOAD_MEETINGS = 0;
+    public static final String DOTS = "...";
 
     @Override
     public Engine onCreateEngine() {
@@ -194,6 +196,7 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
+            super.onDraw(canvas, bounds);
             if (calendarEvent.isPresent()) {
                 drawEventWatchFace(canvas, bounds);
             } else {
@@ -202,8 +205,6 @@ public class GlanceFace extends CanvasWatchFaceService {
         }
 
         private void drawTimeWatchFace(Canvas canvas, Rect bounds) {
-            super.onDraw(canvas, bounds);
-
             Rect timeBounds = new Rect();
             String timeText = timeFormat.format(time);
             int timeX;
@@ -229,7 +230,6 @@ public class GlanceFace extends CanvasWatchFaceService {
         }
 
         private void drawEventWatchFace(Canvas canvas, Rect bounds) {
-            super.onDraw(canvas, bounds);
             Date now = new Date();
             CalendarEvent event = calendarEvent.get();
             Date eventInTimeBase = new Date((event.getStartDate().getTime()) - now.getTime() + ONE_MINUTE_CORRECTION);
@@ -242,20 +242,12 @@ public class GlanceFace extends CanvasWatchFaceService {
             int eventInTimeX;
             int eventInTimeY;
 
-            Rect eventTextBounds = new Rect();
-            String eventText = event.getTitle();
-            int eventTitleX;
-            int eventTitleY;
-
             String timeText = timeFormat.format(time);
             String dateText = timeText + " | " + dateFormat.format(time);
             Rect dateBounds = new Rect();
             int dateX;
             int dateY;
 
-            mEventTitlePaint.getTextBounds(eventText, 0, eventText.length(), eventTextBounds);
-            eventTitleX = Math.abs(bounds.centerX() - eventTextBounds.centerX());
-            eventTitleY = Math.round((Math.abs(bounds.centerY())) - (bounds.height() * 0.11f));
 
             mEventTimeInPaint.getTextBounds(eventInTime, 0, eventInTime.length(), eventInTimeBounds);
             eventInTimeX = Math.abs(bounds.centerX() - eventInTimeBounds.centerX());
@@ -267,9 +259,34 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             canvas.drawColor(backgroundColor);
 
-            canvas.drawText(eventText, eventTitleX, eventTitleY, mEventTitlePaint);
             canvas.drawText(eventInTime, eventInTimeX, eventInTimeY, mEventTimeInPaint);
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
+
+            String eventText = event.getTitle();
+            if (eventText.length() >= 45) {
+                eventText = eventText.substring(0, 42) + DOTS;
+            }
+
+            StaticLayout.Builder slBuilder = StaticLayout.Builder.obtain(eventText, bounds.left + 44, eventText.length(),
+                    mEventTitlePaint, bounds.width() - 75)
+                    .setText(eventText)
+                    .setIncludePad(true)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .setEllipsizedWidth(bounds.width() - 50)
+                    .setMaxLines(0);
+
+            StaticLayout sl = slBuilder.build();
+            canvas.save();
+
+            int numberOfTextLines = sl.getLineCount();
+            float offset = numberOfTextLines > 1 ? 0.3f: 0.2f;
+            float textYCoordinate = Math.round((Math.abs(bounds.centerY())) - (bounds.height() * offset));
+            float textXCoordinate = bounds.left + 25;
+
+            canvas.translate(textXCoordinate, textYCoordinate);
+
+            sl.draw(canvas);
+            canvas.restore();
         }
 
         @Override
@@ -316,7 +333,7 @@ public class GlanceFace extends CanvasWatchFaceService {
             CalendarEvent nextEvent = null;
             List<CalendarEvent> filteredEvents = getFilteredEvents();
             if (filteredEvents.size() > 0) {
-                Date cutoff = new Date(now.getTime() + (EVENT_START_TRESHOLD));
+                Date cutoff = new Date(now.getTime() + (EVENT_START_THRESHOLD));
                 if (filteredEvents.get(0).getStartDate().compareTo(cutoff) < 0) {
                     nextEvent = filteredEvents.get(0);
                 }
