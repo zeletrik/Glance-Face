@@ -1,7 +1,9 @@
 package hu.zeletrik.wear.glanceface;
 
 import android.Manifest;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
@@ -13,10 +15,14 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
 import android.provider.CalendarContract;
+import android.support.wearable.complications.ComplicationData;
+import android.support.wearable.complications.ComplicationHelperActivity;
+import android.support.wearable.complications.rendering.ComplicationDrawable;
 import android.support.wearable.provider.WearableCalendarContract;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
@@ -25,6 +31,7 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.format.DateUtils;
 import android.util.Log;
+import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.SurfaceHolder;
 import android.widget.Toast;
@@ -55,10 +62,35 @@ import static java.lang.System.currentTimeMillis;
 public class GlanceFace extends CanvasWatchFaceService {
     public static final int ONE_MINUTE_CORRECTION = 60000;
     public static final String TAG = "GlanceFace";
+    public static final String DOTS = "...";
     static final int EVENT_START_CUTOFF = 60000 * 5;
     static final int EVENT_START_THRESHOLD = 60000 * 20;
     static final int MSG_LOAD_MEETINGS = 0;
-    public static final String DOTS = "...";
+    private static final int COMPLICATION_ID = 0;
+
+    // Left and right dial supported types.
+    private static final int[] COMPLICATION_SUPPORTED_TYPES = {
+
+            ComplicationData.TYPE_RANGED_VALUE,
+            ComplicationData.TYPE_ICON,
+            ComplicationData.TYPE_SHORT_TEXT,
+            ComplicationData.TYPE_SMALL_IMAGE
+    };
+
+    // Used by {@link ComplicationConfigActivity} to retrieve all complication ids.
+    // TODO: Step 3, expose complication information, part 2
+    static int getComplicationId() {
+        return COMPLICATION_ID;
+    }
+
+
+    // Used by {@link ComplicationConfigActivity} to retrieve complication types supported by
+    // location.
+    // TODO: Step 3, expose complication information, part 3
+    static int[] getSupportedComplicationTypes() {
+        return COMPLICATION_SUPPORTED_TYPES;
+    }
+
 
     @Override
     public Engine onCreateEngine() {
@@ -100,6 +132,26 @@ public class GlanceFace extends CanvasWatchFaceService {
                 }
             }
         };
+        private boolean mAmbient;
+        /*
+         * Whether the display supports fewer bits for each color in ambient mode.
+         * When true, we disable anti-aliasing in ambient mode.
+         */
+        private boolean mLowBitAmbient;
+        /*
+         * Whether the display supports burn in protection in ambient mode.
+         * When true, remove the background in ambient mode.
+         */
+        private boolean mBurnInProtection;
+        // TODO: Step 2, intro 2
+        /* Maps active complication ids to the data for that complication. Note: Data will only be
+         * present if the user has chosen a provider via the settings activity for the watch face.
+         */
+        private SparseArray<ComplicationData> mActiveComplicationDataSparseArray;
+        /* Maps complication ids to corresponding ComplicationDrawable that renders the
+         * the complication data on the watch face.
+         */
+        private SparseArray<ComplicationDrawable> mComplicationDrawableSparseArray;
         private List<CalendarEvent> events = new ArrayList<>();
         private boolean mIsReceiverRegistered;
 
@@ -157,6 +209,25 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             mLoadMeetingsHandler.sendEmptyMessage(MSG_LOAD_MEETINGS);
 
+            initializeComplications();
+        }
+
+        private void initializeComplications() {
+            Log.d(TAG, "initializeComplications()");
+
+            mActiveComplicationDataSparseArray = new SparseArray<>(1);
+
+
+            ComplicationDrawable complicationDrawable =
+                    (ComplicationDrawable) getDrawable(R.drawable.custom_complication_styles);
+            complicationDrawable.setContext(getApplicationContext());
+
+            // Adds new complications to a SparseArray to simplify setting styles and ambient
+            // properties for all complications, i.e., iterate over them all.
+            mComplicationDrawableSparseArray = new SparseArray<>(1);
+            mComplicationDrawableSparseArray.put(COMPLICATION_ID, complicationDrawable);
+
+            setActiveComplications(COMPLICATION_ID);
         }
 
         @Override
@@ -174,8 +245,8 @@ public class GlanceFace extends CanvasWatchFaceService {
             invalidate();
         }
 
-        @Override
-        public void onTapCommand(int tapType, int x, int y, long eventTime) {
+        //        @Override
+        public void onTapCommand2(int tapType, int x, int y, long eventTime) {
             switch (tapType) {
                 case TAP_TYPE_TOUCH:
                     // The user has started touching the screen.
@@ -194,15 +265,51 @@ public class GlanceFace extends CanvasWatchFaceService {
             invalidate();
         }
 
+
+        @Override
+        public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            super.onSurfaceChanged(holder, format, width, height);
+
+            int sizeOfComplication = width / 4;
+            int midpointOfScreen = width / 2;
+
+            int verticalOffset = midpointOfScreen + (sizeOfComplication / 2);
+
+            Rect compBounds =
+                    new Rect(
+                            (midpointOfScreen - (sizeOfComplication / 2)),
+                            verticalOffset,
+                            (midpointOfScreen + (sizeOfComplication / 2)),
+                            (verticalOffset + sizeOfComplication));
+
+            ComplicationDrawable leftComplicationDrawable =
+                    mComplicationDrawableSparseArray.get(COMPLICATION_ID);
+            leftComplicationDrawable.setBounds(compBounds);
+        }
+
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
             super.onDraw(canvas, bounds);
+
+            canvas.drawColor(backgroundColor);
+
+
             if (calendarEvent.isPresent()) {
                 drawEventWatchFace(canvas, bounds);
             } else {
                 drawTimeWatchFace(canvas, bounds);
             }
+
+            drawComplications(canvas);
+
         }
+
+
+        private void drawComplications(Canvas canvas) {
+            ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
+            complicationDrawable.draw(canvas, time);
+        }
+
 
         private void drawTimeWatchFace(Canvas canvas, Rect bounds) {
             Rect timeBounds = new Rect();
@@ -222,8 +329,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             mDatePaint.getTextBounds(dateText, 0, dateText.length(), dateBounds);
             dateX = Math.abs(bounds.centerX() - dateBounds.centerX());
             dateY = Math.round((bounds.centerY() + dateBounds.height()) + (bounds.height() * 0.02f));
-
-            canvas.drawColor(backgroundColor);
 
             canvas.drawText(timeText, timeX, timeY, mTimePaint);
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
@@ -257,8 +362,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             dateX = Math.abs(bounds.centerX() - dateBounds.centerX());
             dateY = Math.round((bounds.centerY() + dateBounds.height()) + (bounds.height() * 0.01f));
 
-            canvas.drawColor(backgroundColor);
-
             canvas.drawText(eventInTime, eventInTimeX, eventInTimeY, mEventTimeInPaint);
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
 
@@ -279,7 +382,7 @@ public class GlanceFace extends CanvasWatchFaceService {
             canvas.save();
 
             int numberOfTextLines = sl.getLineCount();
-            float offset = numberOfTextLines > 1 ? 0.3f: 0.2f;
+            float offset = numberOfTextLines > 1 ? 0.3f : 0.2f;
             float textYCoordinate = Math.round((Math.abs(bounds.centerY())) - (bounds.height() * offset));
             float textXCoordinate = bounds.left + 25;
 
@@ -351,6 +454,123 @@ public class GlanceFace extends CanvasWatchFaceService {
             if (changed) {
                 Log.d(TAG, "Meetings loaded and changed");
                 invalidate();
+            }
+        }
+
+
+        @Override
+        public void onPropertiesChanged(Bundle properties) {
+            mLowBitAmbient = properties.getBoolean(PROPERTY_LOW_BIT_AMBIENT, false);
+            mBurnInProtection = properties.getBoolean(PROPERTY_BURN_IN_PROTECTION, false);
+
+            // Updates complications to properly render in ambient mode based on the
+            // screen's capabilities.
+            ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
+
+            if (complicationDrawable != null) {
+                complicationDrawable.setLowBitAmbient(mLowBitAmbient);
+                complicationDrawable.setBurnInProtection(mBurnInProtection);
+            }
+        }
+
+        // TODO: Step 2, onComplicationDataUpdate()
+        @Override
+        public void onComplicationDataUpdate(
+                int complicationId, ComplicationData complicationData) {
+            Log.d(TAG, "onComplicationDataUpdate() id: " + complicationId);
+
+            // Adds/updates active complication data in the array.
+            mActiveComplicationDataSparseArray.put(complicationId, complicationData);
+
+            // Updates correct ComplicationDrawable with updated data.
+            ComplicationDrawable complicationDrawable =
+                    mComplicationDrawableSparseArray.get(complicationId);
+            complicationDrawable.setComplicationData(complicationData);
+
+            invalidate();
+        }
+
+        @Override
+        public void onTapCommand(int tapType, int x, int y, long eventTime) {
+            // TODO: Step 5, OnTapCommand()
+            Log.d(TAG, "OnTapCommand()");
+            switch (tapType) {
+                case TAP_TYPE_TAP:
+                    int tappedComplicationId = getTappedComplicationId(x, y);
+                    if (tappedComplicationId != -1) {
+                        onComplicationTap(tappedComplicationId);
+                    }
+                    break;
+            }
+        }
+
+        /*
+         * Determines if tap inside a complication area or returns -1.
+         */
+        private int getTappedComplicationId(int x, int y) {
+
+            ComplicationData complicationData;
+            ComplicationDrawable complicationDrawable;
+
+            long currentTimeMillis = System.currentTimeMillis();
+
+            complicationData = mActiveComplicationDataSparseArray.get(COMPLICATION_ID);
+
+
+            if ((complicationData != null)
+                    && (complicationData.isActive(currentTimeMillis))
+                    && (complicationData.getType() != ComplicationData.TYPE_NOT_CONFIGURED)
+                    && (complicationData.getType() != ComplicationData.TYPE_EMPTY)) {
+
+                complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
+                Rect complicationBoundingRect = complicationDrawable.getBounds();
+
+                if (complicationBoundingRect.width() > 0) {
+                    if (complicationBoundingRect.contains(x, y)) {
+                        return COMPLICATION_ID;
+                    }
+                } else {
+                    Log.e(TAG, "Not a recognized complication id.");
+                }
+            }
+
+            return -1;
+        }
+
+        // Fires PendingIntent associated with complication (if it has one).
+        private void onComplicationTap(int complicationId) {
+            // TODO: Step 5, onComplicationTap()
+            Log.d(TAG, "onComplicationTap()");
+
+            ComplicationData complicationData =
+                    mActiveComplicationDataSparseArray.get(complicationId);
+
+            if (complicationData != null) {
+
+                if (complicationData.getTapAction() != null) {
+                    try {
+                        complicationData.getTapAction().send();
+                    } catch (PendingIntent.CanceledException e) {
+                        Log.e(TAG, "onComplicationTap() tap action error: " + e);
+                    }
+
+                } else if (complicationData.getType() == ComplicationData.TYPE_NO_PERMISSION) {
+
+                    // Watch face does not have permission to receive complication data, so launch
+                    // permission request.
+                    ComponentName componentName =
+                            new ComponentName(
+                                    getApplicationContext(), GlanceFace.class);
+
+                    Intent permissionRequestIntent =
+                            ComplicationHelperActivity.createPermissionRequestHelperIntent(
+                                    getApplicationContext(), componentName);
+
+                    startActivity(permissionRequestIntent);
+                }
+
+            } else {
+                Log.d(TAG, "No PendingIntent for complication " + complicationId + ".");
             }
         }
 
