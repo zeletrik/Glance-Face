@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
+import android.os.Vibrator;
 import android.provider.CalendarContract;
 import android.support.wearable.complications.ComplicationData;
 import android.support.wearable.complications.ComplicationHelperActivity;
@@ -61,6 +62,7 @@ import static java.lang.System.currentTimeMillis;
  */
 public class GlanceFace extends CanvasWatchFaceService {
     public static final int ONE_MINUTE_CORRECTION = 60000;
+    public static final int LESS_THEN_ONE_MINUTE= -59999;
     public static final String TAG = "GlanceFace";
     public static final String DOTS = "...";
     static final int EVENT_START_CUTOFF = 60000 * 5;
@@ -296,6 +298,7 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             if (calendarEvent.isPresent()) {
                 drawEventWatchFace(canvas, bounds);
+                vibrate(calendarEvent.get());
             } else {
                 drawTimeWatchFace(canvas, bounds);
             }
@@ -390,6 +393,19 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             sl.draw(canvas);
             canvas.restore();
+        }
+
+        private void vibrate(CalendarEvent event) {
+            long nowTime = new Date().getTime();
+            long eventTime = event.getStartDate().getTime();
+
+            if (eventTime-nowTime < 0 && eventTime-nowTime > LESS_THEN_ONE_MINUTE) {
+                Log.d(TAG, "Vibrate for event=" + event.getTitle());
+                Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+                long[] vibrationPattern = {0, 500, 50, 300};
+                final int indexInPatternToRepeat = -1;
+                vibrator.vibrate(vibrationPattern, indexInPatternToRepeat);
+            }
         }
 
         @Override
