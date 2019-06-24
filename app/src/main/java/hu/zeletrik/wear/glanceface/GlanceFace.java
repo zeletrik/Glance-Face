@@ -37,6 +37,8 @@ import android.util.TypedValue;
 import android.view.SurfaceHolder;
 import android.widget.Toast;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -44,6 +46,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 import static java.lang.System.currentTimeMillis;
@@ -61,14 +64,17 @@ import static java.lang.System.currentTimeMillis;
  * https://codelabs.developers.google.com/codelabs/watchface/index.html#0
  */
 public class GlanceFace extends CanvasWatchFaceService {
-    public static final int ONE_MINUTE_CORRECTION = 60000;
-    public static final int LESS_THEN_ONE_MINUTE= -59999;
-    public static final String TAG = "GlanceFace";
-    public static final String DOTS = "...";
-    static final int EVENT_START_CUTOFF = 60000 * 5;
-    static final int EVENT_START_THRESHOLD = 60000 * 20;
-    static final int MSG_LOAD_MEETINGS = 0;
+    private static final int ONE_MINUTE_CORRECTION = 60000;
+    private static final int LESS_THEN_ONE_MINUTE= -59999;
+    private static final String TAG = "GlanceFace";
+    private static final String DOTS = "...";
+    private static final int EVENT_START_CUTOFF = 60000 * 5;
+    private static final int EVENT_START_THRESHOLD = 60000 * 20;
+    private static final int MSG_LOAD_MEETINGS = 0;
     private static final int COMPLICATION_ID = 0;
+    private static final int MAX_CHAR_FOR_EVENT = 45;
+    private static String currentEventTitle = StringUtils.EMPTY;
+    private static StaticLayout staticLayout;
 
     // Left and right dial supported types.
     private static final int[] COMPLICATION_SUPPORTED_TYPES = {
@@ -244,6 +250,7 @@ public class GlanceFace extends CanvasWatchFaceService {
             super.onTimeTick();
             time = currentTimeMillis();
             calendarEvent = getNextEventInThreshold();
+            calendarEvent.ifPresent(event -> vibrate(event));
             invalidate();
         }
 
@@ -295,10 +302,8 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             canvas.drawColor(backgroundColor);
 
-
             if (calendarEvent.isPresent()) {
                 drawEventWatchFace(canvas, bounds);
-                vibrate(calendarEvent.get());
             } else {
                 drawTimeWatchFace(canvas, bounds);
             }
@@ -367,32 +372,57 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             canvas.drawText(eventInTime, eventInTimeX, eventInTimeY, mEventTimeInPaint);
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
+            String eventTitle = event.getTitle();
 
-            String eventText = event.getTitle();
-            if (eventText.length() >= 45) {
-                eventText = eventText.substring(0, 42) + DOTS;
+            if (!(currentEventTitle.equals(eventTitle)) || Objects.isNull(staticLayout)) {
+                currentEventTitle = eventTitle;
+                staticLayout = createStaticLayout(eventTitle, bounds);
             }
 
-            StaticLayout.Builder slBuilder = StaticLayout.Builder.obtain(eventText, bounds.left + 44, eventText.length(),
-                    mEventTitlePaint, bounds.width() - 75)
-                    .setText(eventText)
-                    .setIncludePad(true)
-                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                    .setEllipsizedWidth(bounds.width() - 50)
-                    .setMaxLines(0);
-
-            StaticLayout sl = slBuilder.build();
             canvas.save();
 
-            int numberOfTextLines = sl.getLineCount();
+            int numberOfTextLines = staticLayout.getLineCount();
             float offset = numberOfTextLines > 1 ? 0.3f : 0.2f;
             float textYCoordinate = Math.round((Math.abs(bounds.centerY())) - (bounds.height() * offset));
-            float textXCoordinate = bounds.left + 25;
+            float textXCoordinate = bounds.left + 38;
 
             canvas.translate(textXCoordinate, textYCoordinate);
-
-            sl.draw(canvas);
+            staticLayout.draw(canvas);
             canvas.restore();
+        }
+
+        private StaticLayout createStaticLayout(String eventTitle, Rect bounds) {
+            if (eventTitle.length() >= MAX_CHAR_FOR_EVENT) {
+                eventTitle = eventTitle.substring(0, MAX_CHAR_FOR_EVENT - 3) + DOTS;
+
+            }
+
+            StaticLayout.Builder slBuilder = StaticLayout.Builder.obtain(eventTitle, bounds.left, eventTitle.length(),
+                    mEventTitlePaint, bounds.width() - 75)
+                    .setText(eventTitle)
+                    .setIncludePad(true)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .setEllipsizedWidth(bounds.width())
+                    .setMaxLines(2);
+
+            StaticLayout sl = slBuilder.build();
+
+            int charCount = MAX_CHAR_FOR_EVENT;
+            while (sl.getLineCount() > 2) {
+                charCount = charCount - 10;
+                eventTitle = eventTitle.substring(0, charCount) + DOTS;
+                slBuilder = StaticLayout.Builder.obtain(eventTitle, bounds.left, eventTitle.length(),
+                        mEventTitlePaint, bounds.width() - 75)
+                        .setText(eventTitle)
+                        .setIncludePad(true)
+                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                        .setEllipsizedWidth(bounds.width())
+                        .setMaxLines(2);
+
+                sl = slBuilder.build();
+            }
+
+            return sl;
         }
 
         private void vibrate(CalendarEvent event) {
