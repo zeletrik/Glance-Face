@@ -35,7 +35,6 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.SurfaceHolder;
-import android.widget.Toast;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -52,20 +51,29 @@ import java.util.Optional;
 import static java.lang.System.currentTimeMillis;
 
 /**
- * Analog watch face with a ticking second hand. In ambient mode, the second hand isn't
- * shown. On devices with low-bit ambient mode, the hands are drawn without anti-aliasing in ambient
- * mode. The watch face is drawn with less contrast in mute mode.
+ * Copyright (c) <GlanceFace> <Patrik Zelena [patrik.zelena@gmail.com]>
  * <p>
- * Important Note: Because watch face apps do not have a default Activity in
- * their project, you will need to set your Configurations to
- * "Do not launch Activity" for both the Wear and/or Application modules. If you
- * are unsure how to do this, please review the "Run Starter project" section
- * in the Google Watch Face Code Lab:
- * https://codelabs.developers.google.com/codelabs/watchface/index.html#0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * <p>
+ * Watch Face Service to display digital date/time
+ * and event title and time left for this if in a threshold,
+ * -20 min and +5 min.
+ * The full day events are filtered out.
+ * One bottom complication is supported.
  */
 public class GlanceFace extends CanvasWatchFaceService {
     private static final int ONE_MINUTE_CORRECTION = 60000;
-    private static final int LESS_THEN_ONE_MINUTE= -59999;
+    private static final int LESS_THEN_ONE_MINUTE = -59999;
     private static final String TAG = "GlanceFace";
     private static final String DOTS = "...";
     private static final int EVENT_START_CUTOFF = 60000 * 5;
@@ -73,32 +81,22 @@ public class GlanceFace extends CanvasWatchFaceService {
     private static final int MSG_LOAD_MEETINGS = 0;
     private static final int COMPLICATION_ID = 0;
     private static final int MAX_CHAR_FOR_EVENT = 45;
-    private static String currentEventTitle = StringUtils.EMPTY;
-    private static StaticLayout staticLayout;
-
-    // Left and right dial supported types.
     private static final int[] COMPLICATION_SUPPORTED_TYPES = {
-
             ComplicationData.TYPE_RANGED_VALUE,
             ComplicationData.TYPE_ICON,
             ComplicationData.TYPE_SHORT_TEXT,
             ComplicationData.TYPE_SMALL_IMAGE
     };
+    private static String currentEventTitle = StringUtils.EMPTY;
+    private static StaticLayout staticLayout;
 
-    // Used by {@link ComplicationConfigActivity} to retrieve all complication ids.
-    // TODO: Step 3, expose complication information, part 2
     static int getComplicationId() {
         return COMPLICATION_ID;
     }
 
-
-    // Used by {@link ComplicationConfigActivity} to retrieve complication types supported by
-    // location.
-    // TODO: Step 3, expose complication information, part 3
     static int[] getSupportedComplicationTypes() {
         return COMPLICATION_SUPPORTED_TYPES;
     }
-
 
     @Override
     public Engine onCreateEngine() {
@@ -109,9 +107,7 @@ public class GlanceFace extends CanvasWatchFaceService {
         return new Engine();
     }
 
-
     private class Engine extends CanvasWatchFaceService.Engine {
-
         private long time;
         private SimpleDateFormat dateFormat;
         private SimpleDateFormat eventTimeFormat;
@@ -140,25 +136,9 @@ public class GlanceFace extends CanvasWatchFaceService {
                 }
             }
         };
-        private boolean mAmbient;
-        /*
-         * Whether the display supports fewer bits for each color in ambient mode.
-         * When true, we disable anti-aliasing in ambient mode.
-         */
         private boolean mLowBitAmbient;
-        /*
-         * Whether the display supports burn in protection in ambient mode.
-         * When true, remove the background in ambient mode.
-         */
         private boolean mBurnInProtection;
-        // TODO: Step 2, intro 2
-        /* Maps active complication ids to the data for that complication. Note: Data will only be
-         * present if the user has chosen a provider via the settings activity for the watch face.
-         */
         private SparseArray<ComplicationData> mActiveComplicationDataSparseArray;
-        /* Maps complication ids to corresponding ComplicationDrawable that renders the
-         * the complication data on the watch face.
-         */
         private SparseArray<ComplicationDrawable> mComplicationDrawableSparseArray;
         private List<CalendarEvent> events = new ArrayList<>();
         private boolean mIsReceiverRegistered;
@@ -222,16 +202,12 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         private void initializeComplications() {
             Log.d(TAG, "initializeComplications()");
-
             mActiveComplicationDataSparseArray = new SparseArray<>(1);
-
 
             ComplicationDrawable complicationDrawable =
                     (ComplicationDrawable) getDrawable(R.drawable.custom_complication_styles);
-            complicationDrawable.setContext(getApplicationContext());
+            Objects.requireNonNull(complicationDrawable).setContext(getApplicationContext());
 
-            // Adds new complications to a SparseArray to simplify setting styles and ambient
-            // properties for all complications, i.e., iterate over them all.
             mComplicationDrawableSparseArray = new SparseArray<>(1);
             mComplicationDrawableSparseArray.put(COMPLICATION_ID, complicationDrawable);
 
@@ -250,30 +226,9 @@ public class GlanceFace extends CanvasWatchFaceService {
             super.onTimeTick();
             time = currentTimeMillis();
             calendarEvent = getNextEventInThreshold();
-            calendarEvent.ifPresent(event -> vibrate(event));
+            calendarEvent.ifPresent(this::vibrate);
             invalidate();
         }
-
-        //        @Override
-        public void onTapCommand2(int tapType, int x, int y, long eventTime) {
-            switch (tapType) {
-                case TAP_TYPE_TOUCH:
-                    // The user has started touching the screen.
-                    break;
-                case TAP_TYPE_TOUCH_CANCEL:
-                    // The user has started a different gesture or otherwise cancelled the tap.
-                    break;
-                case TAP_TYPE_TAP:
-                    // The user has completed the tap gesture.
-                    List<CalendarEvent> filtered = getFilteredEvents();
-                    String msg = filtered.stream().map(CalendarEvent::getTitle).findFirst().orElse("PLACEHOLDER");
-                    Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_SHORT)
-                            .show();
-                    break;
-            }
-            invalidate();
-        }
-
 
         @Override
         public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -299,7 +254,6 @@ public class GlanceFace extends CanvasWatchFaceService {
         @Override
         public void onDraw(Canvas canvas, Rect bounds) {
             super.onDraw(canvas, bounds);
-
             canvas.drawColor(backgroundColor);
 
             if (calendarEvent.isPresent()) {
@@ -309,7 +263,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             }
 
             drawComplications(canvas);
-
         }
 
 
@@ -317,7 +270,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
             complicationDrawable.draw(canvas, time);
         }
-
 
         private void drawTimeWatchFace(Canvas canvas, Rect bounds) {
             Rect timeBounds = new Rect();
@@ -361,7 +313,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             int dateX;
             int dateY;
 
-
             mEventTimeInPaint.getTextBounds(eventInTime, 0, eventInTime.length(), eventInTimeBounds);
             eventInTimeX = Math.abs(bounds.centerX() - eventInTimeBounds.centerX());
             eventInTimeY = Math.round((bounds.centerY()) - (bounds.height() * 0.01f));
@@ -374,7 +325,7 @@ public class GlanceFace extends CanvasWatchFaceService {
             canvas.drawText(dateText, dateX, dateY, mDatePaint);
             String eventTitle = event.getTitle();
 
-            if (!(currentEventTitle.equals(eventTitle)) || Objects.isNull(staticLayout)) {
+            if (isRecalculateLayoutNeeded(eventTitle)) {
                 currentEventTitle = eventTitle;
                 staticLayout = createStaticLayout(eventTitle, bounds);
             }
@@ -389,6 +340,10 @@ public class GlanceFace extends CanvasWatchFaceService {
             canvas.translate(textXCoordinate, textYCoordinate);
             staticLayout.draw(canvas);
             canvas.restore();
+        }
+
+        private boolean isRecalculateLayoutNeeded(String eventTitle) {
+            return !(currentEventTitle.equals(eventTitle)) || Objects.isNull(staticLayout);
         }
 
         private StaticLayout createStaticLayout(String eventTitle, Rect bounds) {
@@ -429,7 +384,7 @@ public class GlanceFace extends CanvasWatchFaceService {
             long nowTime = new Date().getTime();
             long eventTime = event.getStartDate().getTime();
 
-            if (eventTime-nowTime < 0 && eventTime-nowTime > LESS_THEN_ONE_MINUTE) {
+            if (eventTime - nowTime < 0 && eventTime - nowTime > LESS_THEN_ONE_MINUTE) {
                 Log.d(TAG, "Vibrate for event=" + event.getTitle());
                 Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
                 long[] vibrationPattern = {0, 500, 50, 300};
@@ -508,9 +463,6 @@ public class GlanceFace extends CanvasWatchFaceService {
         public void onPropertiesChanged(Bundle properties) {
             mLowBitAmbient = properties.getBoolean(PROPERTY_LOW_BIT_AMBIENT, false);
             mBurnInProtection = properties.getBoolean(PROPERTY_BURN_IN_PROTECTION, false);
-
-            // Updates complications to properly render in ambient mode based on the
-            // screen's capabilities.
             ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
 
             if (complicationDrawable != null) {
@@ -519,7 +471,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             }
         }
 
-        // TODO: Step 2, onComplicationDataUpdate()
         @Override
         public void onComplicationDataUpdate(
                 int complicationId, ComplicationData complicationData) {
@@ -538,7 +489,6 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         @Override
         public void onTapCommand(int tapType, int x, int y, long eventTime) {
-            // TODO: Step 5, OnTapCommand()
             Log.d(TAG, "OnTapCommand()");
             switch (tapType) {
                 case TAP_TYPE_TAP:
@@ -562,7 +512,6 @@ public class GlanceFace extends CanvasWatchFaceService {
 
             complicationData = mActiveComplicationDataSparseArray.get(COMPLICATION_ID);
 
-
             if ((complicationData != null)
                     && (complicationData.isActive(currentTimeMillis))
                     && (complicationData.getType() != ComplicationData.TYPE_NOT_CONFIGURED)
@@ -583,10 +532,8 @@ public class GlanceFace extends CanvasWatchFaceService {
             return -1;
         }
 
-        // Fires PendingIntent associated with complication (if it has one).
         private void onComplicationTap(int complicationId) {
-            // TODO: Step 5, onComplicationTap()
-            Log.d(TAG, "onComplicationTap()");
+            Log.d(TAG, "onComplicationTap");
 
             ComplicationData complicationData =
                     mActiveComplicationDataSparseArray.get(complicationId);
@@ -602,11 +549,8 @@ public class GlanceFace extends CanvasWatchFaceService {
 
                 } else if (complicationData.getType() == ComplicationData.TYPE_NO_PERMISSION) {
 
-                    // Watch face does not have permission to receive complication data, so launch
-                    // permission request.
-                    ComponentName componentName =
-                            new ComponentName(
-                                    getApplicationContext(), GlanceFace.class);
+                    ComponentName componentName = new ComponentName(
+                            getApplicationContext(), GlanceFace.class);
 
                     Intent permissionRequestIntent =
                             ComplicationHelperActivity.createPermissionRequestHelperIntent(

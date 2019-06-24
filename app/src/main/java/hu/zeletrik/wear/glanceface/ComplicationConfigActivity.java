@@ -19,7 +19,7 @@ import java.util.concurrent.Executors;
 
 /**
  * The watch-side config activity for {@link GlanceFace}, which allows for setting
- * the left and right complications of watch face.
+ * the bottom complications of watch face.
  */
 public class ComplicationConfigActivity extends Activity implements View.OnClickListener {
 
@@ -27,13 +27,10 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
     private static final String TAG = "ConfigActivity";
     private int mComplicationId;
 
-    // Selected complication id by user.
     private int mSelectedComplicationId;
 
-    // ComponentName used to identify a specific service that renders the watch face.
     private ComponentName mWatchFaceComponentName;
 
-    // Required to retrieve complication data from watch face for preview.
     private ProviderInfoRetriever mProviderInfoRetriever;
 
     private ImageView mComplicationBackground;
@@ -49,26 +46,16 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
         setContentView(R.layout.activity_config);
 
         mDefaultAddComplicationDrawable = getDrawable(R.drawable.add_complication);
-
-        // TODO: Step 3, initialize 1
         mSelectedComplicationId = -1;
-
-        mComplicationId =
-                GlanceFace.getComplicationId();
+        mComplicationId = GlanceFace.getComplicationId();
 
         mWatchFaceComponentName =
                 new ComponentName(getApplicationContext(), GlanceFace.class);
-
-        // Sets up left complication preview.
         mComplicationBackground = findViewById(R.id.complication_background);
         mComplication = findViewById(R.id.complication);
         mComplication.setOnClickListener(this);
-
-        // Sets default as "Add Complication" icon.
         mComplication.setImageDrawable(mDefaultAddComplicationDrawable);
         mComplicationBackground.setVisibility(View.INVISIBLE);
-
-        // Initialization of code to retrieve active complication data for the watch face.
         mProviderInfoRetriever =
                 new ProviderInfoRetriever(getApplicationContext(), Executors.newCachedThreadPool());
         mProviderInfoRetriever.init();
@@ -79,13 +66,9 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
-        // TODO: Step 3, release
-        // Required to release retriever for active complication data.
         mProviderInfoRetriever.release();
     }
 
-    // TODO: Step 3, retrieve complication data
     public void retrieveInitialComplicationsData() {
 
         mProviderInfoRetriever.retrieveProviderInfo(
@@ -94,9 +77,7 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
                     public void onProviderInfoReceived(
                             int watchFaceComplicationId,
                             @Nullable ComplicationProviderInfo complicationProviderInfo) {
-
                         Log.d(TAG, "onProviderInfoReceived: " + complicationProviderInfo);
-
                         updateComplicationViews(watchFaceComplicationId, complicationProviderInfo);
                     }
                 },
@@ -113,15 +94,10 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
         }
     }
 
-    // Verifies the watch face supports the complication location, then launches the helper
-    // class, so user can choose their complication data provider.
-    // TODO: Step 3, launch data selector
     private void launchComplicationHelperActivity() {
-
         mSelectedComplicationId = mComplicationId;
 
         if (mSelectedComplicationId >= 0) {
-
             int[] supportedTypes =
                     GlanceFace.getSupportedComplicationTypes();
 
@@ -132,7 +108,6 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
                             mSelectedComplicationId,
                             supportedTypes),
                     ComplicationConfigActivity.COMPLICATION_CONFIG_REQUEST_CODE);
-
         } else {
             Log.d(TAG, "Complication not supported by watch face.");
         }
@@ -156,15 +131,10 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-
-        // TODO: Step 3, update views
         if (requestCode == COMPLICATION_CONFIG_REQUEST_CODE && resultCode == RESULT_OK) {
-
-            // Retrieves information for selected Complication provider.
             ComplicationProviderInfo complicationProviderInfo =
                     data.getParcelableExtra(ProviderChooserIntent.EXTRA_PROVIDER_INFO);
             Log.d(TAG, "Provider: " + complicationProviderInfo);
-
             if (mSelectedComplicationId >= 0) {
                 updateComplicationViews(mSelectedComplicationId, complicationProviderInfo);
             }
