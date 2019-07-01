@@ -2,8 +2,9 @@ package hu.zeletrik.wear.glanceface;
 
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.support.v4.app.ActivityCompat;
 import android.util.Log;
+
+import androidx.core.app.ActivityCompat;
 
 public class PermissionRequestActivity extends Activity {
     private static int PERMISSIONS_CODE = 0;
