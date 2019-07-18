@@ -48,7 +48,7 @@ public class ComplicationConfigActivity extends Activity implements View.OnClick
 
         mDefaultAddComplicationDrawable = getDrawable(R.drawable.add_complication);
         mSelectedComplicationId = -1;
-        mComplicationId = GlanceFace.getComplicationId();
+        mComplicationId = 0;
 
         mWatchFaceComponentName =
                 new ComponentName(getApplicationContext(), GlanceFace.class);
