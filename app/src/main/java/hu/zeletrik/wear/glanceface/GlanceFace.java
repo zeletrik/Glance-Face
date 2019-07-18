@@ -32,7 +32,6 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.format.DateUtils;
 import android.util.Log;
-import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.SurfaceHolder;
 
@@ -82,17 +81,13 @@ public class GlanceFace extends CanvasWatchFaceService {
     private static final int COMPLICATION_ID = 0;
     private static final int MAX_CHAR_FOR_EVENT = 45;
     private static final int[] COMPLICATION_SUPPORTED_TYPES = {
+            ComplicationData.TYPE_SMALL_IMAGE,
             ComplicationData.TYPE_RANGED_VALUE,
             ComplicationData.TYPE_ICON,
-            ComplicationData.TYPE_SHORT_TEXT,
-            ComplicationData.TYPE_SMALL_IMAGE
+            ComplicationData.TYPE_SHORT_TEXT
     };
     private static String currentEventTitle = StringUtils.EMPTY;
     private static StaticLayout staticLayout;
-
-    static int getComplicationId() {
-        return COMPLICATION_ID;
-    }
 
     static int[] getSupportedComplicationTypes() {
         return COMPLICATION_SUPPORTED_TYPES;
@@ -138,8 +133,8 @@ public class GlanceFace extends CanvasWatchFaceService {
         };
         private boolean mLowBitAmbient;
         private boolean mBurnInProtection;
-        private SparseArray<ComplicationData> mActiveComplicationDataSparseArray;
-        private SparseArray<ComplicationDrawable> mComplicationDrawableSparseArray;
+        private ComplicationData mActiveComplicationData;
+        private ComplicationDrawable mComplicationDrawable;
         private List<CalendarEvent> events = new ArrayList<>();
         private boolean mIsReceiverRegistered;
 
@@ -202,14 +197,9 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         private void initializeComplications() {
             Log.d(TAG, "initializeComplications()");
-            mActiveComplicationDataSparseArray = new SparseArray<>(1);
 
-            ComplicationDrawable complicationDrawable =
-                    (ComplicationDrawable) getDrawable(R.drawable.custom_complication_styles);
-            Objects.requireNonNull(complicationDrawable).setContext(getApplicationContext());
-
-            mComplicationDrawableSparseArray = new SparseArray<>(1);
-            mComplicationDrawableSparseArray.put(COMPLICATION_ID, complicationDrawable);
+            mComplicationDrawable = new ComplicationDrawable(GlanceFace.this);
+            mComplicationDrawable.setContext(getApplicationContext());
 
             setActiveComplications(COMPLICATION_ID);
         }
@@ -246,9 +236,7 @@ public class GlanceFace extends CanvasWatchFaceService {
                             (midpointOfScreen + (sizeOfComplication / 2)),
                             (verticalOffset + sizeOfComplication));
 
-            ComplicationDrawable leftComplicationDrawable =
-                    mComplicationDrawableSparseArray.get(COMPLICATION_ID);
-            leftComplicationDrawable.setBounds(compBounds);
+            mComplicationDrawable.setBounds(compBounds);
         }
 
         @Override
@@ -267,8 +255,7 @@ public class GlanceFace extends CanvasWatchFaceService {
 
 
         private void drawComplications(Canvas canvas) {
-            ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
-            complicationDrawable.draw(canvas, time);
+            mComplicationDrawable.draw(canvas, time);
         }
 
         private void drawTimeWatchFace(Canvas canvas, Rect bounds) {
@@ -458,31 +445,39 @@ public class GlanceFace extends CanvasWatchFaceService {
             }
         }
 
+        @Override
+        public void onAmbientModeChanged(boolean inAmbientMode) {
+            super.onAmbientModeChanged(inAmbientMode);
+            if (Objects.nonNull(mComplicationDrawable)) {
+                if (inAmbientMode) {
+                    mComplicationDrawable.setInAmbientMode(true);
+                } else {
+                    mComplicationDrawable.setInAmbientMode(false);
+                }
+            }
+            invalidate();
+        }
 
         @Override
         public void onPropertiesChanged(Bundle properties) {
             mLowBitAmbient = properties.getBoolean(PROPERTY_LOW_BIT_AMBIENT, false);
             mBurnInProtection = properties.getBoolean(PROPERTY_BURN_IN_PROTECTION, false);
-            ComplicationDrawable complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
 
-            if (complicationDrawable != null) {
-                complicationDrawable.setLowBitAmbient(mLowBitAmbient);
-                complicationDrawable.setBurnInProtection(mBurnInProtection);
+            if (Objects.nonNull(mComplicationDrawable)) {
+                mComplicationDrawable.setLowBitAmbient(mLowBitAmbient);
+                mComplicationDrawable.setBurnInProtection(mBurnInProtection);
             }
         }
 
         @Override
-        public void onComplicationDataUpdate(
-                int complicationId, ComplicationData complicationData) {
+        public void onComplicationDataUpdate(int complicationId, ComplicationData complicationData) {
             Log.d(TAG, "onComplicationDataUpdate() id: " + complicationId);
 
             // Adds/updates active complication data in the array.
-            mActiveComplicationDataSparseArray.put(complicationId, complicationData);
+            mActiveComplicationData = complicationData;
 
             // Updates correct ComplicationDrawable with updated data.
-            ComplicationDrawable complicationDrawable =
-                    mComplicationDrawableSparseArray.get(complicationId);
-            complicationDrawable.setComplicationData(complicationData);
+            mComplicationDrawable.setComplicationData(complicationData);
 
             invalidate();
         }
@@ -505,20 +500,14 @@ public class GlanceFace extends CanvasWatchFaceService {
          */
         private int getTappedComplicationId(int x, int y) {
 
-            ComplicationData complicationData;
-            ComplicationDrawable complicationDrawable;
-
             long currentTimeMillis = System.currentTimeMillis();
 
-            complicationData = mActiveComplicationDataSparseArray.get(COMPLICATION_ID);
+            if ((mActiveComplicationData != null)
+                    && (mActiveComplicationData.isActive(currentTimeMillis))
+                    && (mActiveComplicationData.getType() != ComplicationData.TYPE_NOT_CONFIGURED)
+                    && (mActiveComplicationData.getType() != ComplicationData.TYPE_EMPTY)) {
 
-            if ((complicationData != null)
-                    && (complicationData.isActive(currentTimeMillis))
-                    && (complicationData.getType() != ComplicationData.TYPE_NOT_CONFIGURED)
-                    && (complicationData.getType() != ComplicationData.TYPE_EMPTY)) {
-
-                complicationDrawable = mComplicationDrawableSparseArray.get(COMPLICATION_ID);
-                Rect complicationBoundingRect = complicationDrawable.getBounds();
+                Rect complicationBoundingRect = mComplicationDrawable.getBounds();
 
                 if (complicationBoundingRect.width() > 0) {
                     if (complicationBoundingRect.contains(x, y)) {
@@ -535,19 +524,16 @@ public class GlanceFace extends CanvasWatchFaceService {
         private void onComplicationTap(int complicationId) {
             Log.d(TAG, "onComplicationTap");
 
-            ComplicationData complicationData =
-                    mActiveComplicationDataSparseArray.get(complicationId);
+            if (mActiveComplicationData != null) {
 
-            if (complicationData != null) {
-
-                if (complicationData.getTapAction() != null) {
+                if (mActiveComplicationData.getTapAction() != null) {
                     try {
-                        complicationData.getTapAction().send();
+                        mActiveComplicationData.getTapAction().send();
                     } catch (PendingIntent.CanceledException e) {
                         Log.e(TAG, "onComplicationTap() tap action error: " + e);
                     }
 
-                } else if (complicationData.getType() == ComplicationData.TYPE_NO_PERMISSION) {
+                } else if (mActiveComplicationData.getType() == ComplicationData.TYPE_NO_PERMISSION) {
 
                     ComponentName componentName = new ComponentName(
                             getApplicationContext(), GlanceFace.class);
