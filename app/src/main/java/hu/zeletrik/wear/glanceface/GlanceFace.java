@@ -449,11 +449,7 @@ public class GlanceFace extends CanvasWatchFaceService {
         public void onAmbientModeChanged(boolean inAmbientMode) {
             super.onAmbientModeChanged(inAmbientMode);
             if (Objects.nonNull(mComplicationDrawable)) {
-                if (inAmbientMode) {
-                    mComplicationDrawable.setInAmbientMode(true);
-                } else {
-                    mComplicationDrawable.setInAmbientMode(false);
-                }
+                mComplicationDrawable.setInAmbientMode(inAmbientMode);
             }
             invalidate();
         }
