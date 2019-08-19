@@ -8,6 +8,7 @@ import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -20,6 +21,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
 import android.os.Vibrator;
+import android.preference.PreferenceManager;
 import android.provider.CalendarContract;
 import android.support.wearable.complications.ComplicationData;
 import android.support.wearable.complications.ComplicationHelperActivity;
@@ -72,7 +74,6 @@ import static java.lang.System.currentTimeMillis;
  */
 public class GlanceFace extends CanvasWatchFaceService {
     private static final int ONE_MINUTE_CORRECTION = 60000;
-    private static final int LESS_THEN_ONE_MINUTE = -59999;
     private static final String TAG = "GlanceFace";
     private static final String DOTS = "...";
     private static final int EVENT_START_CUTOFF = 60000 * 5;
@@ -88,6 +89,7 @@ public class GlanceFace extends CanvasWatchFaceService {
     };
     private static String currentEventTitle = StringUtils.EMPTY;
     private static StaticLayout staticLayout;
+    private static boolean vibrateNeeded = false;
 
     static int[] getSupportedComplicationTypes() {
         return COMPLICATION_SUPPORTED_TYPES;
@@ -102,7 +104,7 @@ public class GlanceFace extends CanvasWatchFaceService {
         return new Engine();
     }
 
-    private class Engine extends CanvasWatchFaceService.Engine {
+    private class Engine extends CanvasWatchFaceService.Engine implements SharedPreferences.OnSharedPreferenceChangeListener {
         private long time;
         private SimpleDateFormat dateFormat;
         private SimpleDateFormat eventTimeFormat;
@@ -131,6 +133,7 @@ public class GlanceFace extends CanvasWatchFaceService {
                 }
             }
         };
+        private SharedPreferences settings;
         private boolean mLowBitAmbient;
         private boolean mBurnInProtection;
         private ComplicationData mActiveComplicationData;
@@ -152,6 +155,9 @@ public class GlanceFace extends CanvasWatchFaceService {
         @Override
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
+
+            settings = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
+            settings.registerOnSharedPreferenceChangeListener(this);
 
             mTypefaceThin = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Thin.ttf");
             mTypefaceRegular = Typeface.createFromAsset(getBaseContext().getAssets(), "fonts/ProductSans-Regular.ttf");
@@ -206,6 +212,7 @@ public class GlanceFace extends CanvasWatchFaceService {
 
         @Override
         public void onDestroy() {
+            settings.unregisterOnSharedPreferenceChangeListener(this);
             mLoadMeetingsHandler.removeMessages(MSG_LOAD_MEETINGS);
             cancelLoadMeetingTask();
             super.onDestroy();
@@ -216,7 +223,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             super.onTimeTick();
             time = currentTimeMillis();
             calendarEvent = getNextEventInThreshold();
-            calendarEvent.ifPresent(this::vibrate);
             invalidate();
         }
 
@@ -290,6 +296,12 @@ public class GlanceFace extends CanvasWatchFaceService {
             String eventInTime = "in " + eventTimeFormat.format(eventInTimeBase) + " min";
             if (event.getStartDate().before(now)) {
                 eventInTime = "Now";
+                if (vibrateNeeded) {
+                    vibrate(event.getTitle());
+                    vibrateNeeded = false;
+                }
+            } else {
+                vibrateNeeded = true;
             }
             int eventInTimeX;
             int eventInTimeY;
@@ -367,17 +379,13 @@ public class GlanceFace extends CanvasWatchFaceService {
             return sl;
         }
 
-        private void vibrate(CalendarEvent event) {
-            long nowTime = new Date().getTime();
-            long eventTime = event.getStartDate().getTime();
+        private void vibrate(String title) {
+            Log.d(TAG, "Vibrate for event=" + title);
+            Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            long[] vibrationPattern = {0, 500, 50, 300};
+            final int indexInPatternToRepeat = -1;
+            vibrator.vibrate(vibrationPattern, indexInPatternToRepeat);
 
-            if (eventTime - nowTime < 0 && eventTime - nowTime > LESS_THEN_ONE_MINUTE) {
-                Log.d(TAG, "Vibrate for event=" + event.getTitle());
-                Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-                long[] vibrationPattern = {0, 500, 50, 300};
-                final int indexInPatternToRepeat = -1;
-                vibrator.vibrate(vibrationPattern, indexInPatternToRepeat);
-            }
         }
 
         @Override
@@ -468,13 +476,8 @@ public class GlanceFace extends CanvasWatchFaceService {
         @Override
         public void onComplicationDataUpdate(int complicationId, ComplicationData complicationData) {
             Log.d(TAG, "onComplicationDataUpdate() id: " + complicationId);
-
-            // Adds/updates active complication data in the array.
             mActiveComplicationData = complicationData;
-
-            // Updates correct ComplicationDrawable with updated data.
             mComplicationDrawable.setComplicationData(complicationData);
-
             invalidate();
         }
 
@@ -491,9 +494,6 @@ public class GlanceFace extends CanvasWatchFaceService {
             }
         }
 
-        /*
-         * Determines if tap inside a complication area or returns -1.
-         */
         private int getTappedComplicationId(int x, int y) {
 
             long currentTimeMillis = System.currentTimeMillis();
@@ -544,6 +544,11 @@ public class GlanceFace extends CanvasWatchFaceService {
             } else {
                 Log.d(TAG, "No PendingIntent for complication " + complicationId + ".");
             }
+        }
+
+        @Override
+        public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+
         }
 
         /**
